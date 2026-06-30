@@ -2734,11 +2734,13 @@ function setFilter(tag, el) {
 }
 
 function renderAll() {
+  if (!appData) return;
   renderStatsAndFilters();
   renderPosts();
 }
 
 function renderStatsAndFilters() {
+  if (!tagData || !tagData.length) tagData = loadTags();
   const posts = appData.posts;
   // Stats bar — show top 3 tags by usage
   const tagCounts = {};
@@ -3020,9 +3022,9 @@ let pendingDeleteAction = null;
 let logoClickCount = 0;
 let logoClickTimer = null;
 document.querySelector('.logo-icon').addEventListener('click', function() {
-  switchPage('home');
   logoClickCount++;
   if (logoClickCount === 1) {
+    switchPage('home');
     logoClickTimer = setTimeout(() => { logoClickCount = 0; }, 3000);
   }
   if (logoClickCount >= 3) {
