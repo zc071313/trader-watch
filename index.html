@@ -2415,14 +2415,19 @@ function scheduleSync(data) {
 async function loadPosts() {
   if (gitHubConfigured()) {
     try {
-      var data = await getSha();
-      if (data.content) {
+      var data = await Promise.race([
+        getSha(),
+        new Promise(function(_, reject) { setTimeout(function() { reject(new Error('TIMEOUT')); }, 10000); })
+      ]);
+      if (data && data.content) {
         postsSha = data.sha;
         cacheLocal(data.content);
         return data.content;
       }
     } catch(e) {
       if (e.message === 'RATE_LIMIT') showToast('GitHub API 频率限制，使用本地缓存');
+      else if (e.message === 'TIMEOUT') console.warn('[TraderWatch] GitHub API 超时(>10s)，使用本地缓存');
+      else console.warn('[TraderWatch] GitHub API 异常:', e.message, '，使用本地缓存');
     }
   }
   return loadLocal();
@@ -2734,14 +2739,24 @@ function setFilter(tag, el) {
 }
 
 function renderAll() {
-  if (!appData) return;
-  renderStatsAndFilters();
-  renderPosts();
+  if (!appData) {
+    console.warn('[TraderWatch] renderAll: appData 为空，跳过渲染');
+    return;
+  }
+  try { renderStatsAndFilters(); } catch(e) { console.error('[TraderWatch] renderStatsAndFilters 错误:', e); }
+  try { renderPosts(); } catch(e) { console.error('[TraderWatch] renderPosts 错误:', e); }
 }
 
 function renderStatsAndFilters() {
-  if (!tagData || !tagData.length) tagData = loadTags();
+  if (!tagData || !tagData.length) {
+    tagData = loadTags();
+    console.log('[TraderWatch] renderStatsAndFilters: tagData 重新加载，', tagData.length, '个标签');
+  }
   const posts = appData.posts;
+  if (!Array.isArray(posts)) {
+    console.error('[TraderWatch] renderStatsAndFilters: appData.posts 不是数组，类型:', typeof posts);
+    return;
+  }
   // Stats bar — show top 3 tags by usage
   const tagCounts = {};
   tagData.forEach(t => { tagCounts[t.key] = posts.filter(p => p.scamType === t.key).length; });
@@ -4107,6 +4122,10 @@ document.getElementById('itemModal').addEventListener('click', function(e) {
 // ==================== TAG MANAGEMENT (ADMIN) ====================
 function populateTagSelect() {
   const select = document.getElementById('postScamType');
+  if (!select) {
+    console.warn('[TraderWatch] populateTagSelect: #postScamType 元素不存在，跳过');
+    return;
+  }
   const val = select.value;
   select.innerHTML = '<option value="">请选择标签</option>' +
     tagData.map(t => `<option value="${t.key}">${t.name}</option>`).join('');
@@ -4396,14 +4415,21 @@ function skipToken() {
 
 // ==================== INIT ====================
 (async function() {
-  if (!getGitHubToken()) {
-    await showTokenModal();
-    // Refresh token-driven state after modal
+  try {
+    if (!getGitHubToken()) {
+      console.log('[TraderWatch] 无 GitHub Token，弹出 Token 输入框');
+      await showTokenModal();
+    }
+    console.log('[TraderWatch] 开始加载帖子数据...');
+    appData = await loadPosts();
+    console.log('[TraderWatch] 帖子数据加载完成，帖子数:', appData && appData.posts ? appData.posts.length : '?');
+    populateTagSelect();
+    renderAll();
+    console.log('[TraderWatch] JS initialized successfully — all functions loaded');
+  } catch(e) {
+    console.error('[TraderWatch] INIT 致命错误:', e);
+    showToast('初始化失败，请刷新页面重试');
   }
-  appData = await loadPosts();
-  populateTagSelect();
-  renderAll();
-  console.log('[TraderWatch] JS initialized successfully — all functions loaded');
 })();
 </script>
 </body>
